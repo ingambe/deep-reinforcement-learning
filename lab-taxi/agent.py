@@ -1,9 +1,10 @@
 import numpy as np
 from collections import defaultdict
+import random
 
 class Agent:
 
-    def __init__(self, nA=6):
+    def __init__(self, nA=6, epsilon=0.99, alpha=0.15, gamma=0.99):
         """ Initialize agent.
 
         Params
@@ -11,7 +12,11 @@ class Agent:
         - nA: number of actions available to the agent
         """
         self.nA = nA
-        self.Q = defaultdict(lambda: np.zeros(self.nA))
+        self.epsilon = epsilon
+        self.teta = 0.99
+        self.alpha = alpha
+        self.gamma = gamma
+        self.Q = defaultdict(lambda: np.zeros(self.nA) + 100)
 
     def select_action(self, state):
         """ Given the state, select an action.
@@ -24,6 +29,8 @@ class Agent:
         =======
         - action: an integer, compatible with the task's action space
         """
+        if random.random() > self.epsilon:
+            return np.argmax(self.Q[state])
         return np.random.choice(self.nA)
 
     def step(self, state, action, reward, next_state, done):
@@ -37,4 +44,6 @@ class Agent:
         - next_state: the current state of the environment
         - done: whether the episode is complete (True or False)
         """
-        self.Q[state][action] += 1
+        self.Q[state][action] += self.alpha * ((reward + self.gamma * max(self.Q[next_state])) - self.Q[state][action])
+        if done:
+            self.epsilon *= self.teta
