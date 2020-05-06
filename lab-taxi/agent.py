@@ -4,7 +4,7 @@ import random
 
 class Agent:
 
-    def __init__(self, nA=6, epsilon=0.99, alpha=0.15, gamma=0.99):
+    def __init__(self, nA=6, epsilon=0.9, alpha=0.15, gamma=0.99):
         """ Initialize agent.
 
         Params
@@ -13,7 +13,7 @@ class Agent:
         """
         self.nA = nA
         self.epsilon = epsilon
-        self.teta = 0.99
+        self.teta = 0.999
         self.alpha = alpha
         self.gamma = gamma
         self.Q = defaultdict(lambda: np.zeros(self.nA) + 100)
