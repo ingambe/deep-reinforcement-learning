@@ -63,17 +63,15 @@ class Agent():
             state (array_like): current state
             eps (float): epsilon, for epsilon-greedy action selection
         """
+        if random.random() < eps:
+            return random.choice(np.arange(self.action_size))
         state = torch.from_numpy(state).float().unsqueeze(0).to(device)
         self.qnetwork_local.eval()
         with torch.no_grad():
             action_values = self.qnetwork_local(state)
         self.qnetwork_local.train()
 
-        # Epsilon-greedy action selection
-        if random.random() > eps:
-            return np.argmax(action_values.cpu().data.numpy())
-        else:
-            return random.choice(np.arange(self.action_size))
+        return np.argmax(action_values.cpu().data.numpy())
 
     def learn(self, experiences, gamma):
         """Update value parameters using given batch of experience tuples.
@@ -84,9 +82,18 @@ class Agent():
             gamma (float): discount factor
         """
         states, actions, rewards, next_states, dones = experiences
-
-        ## TODO: compute and minimize the loss
-        "*** YOUR CODE HERE ***"
+        
+        for i in range(len(experiences)):
+            self.optimizer.zero_grad()
+            state, action, reward, next_state, done = states[i], actions[i], rewards[i], next_states[i], dones[i]
+            predicted = self.qnetwork_local(state)
+            with torch.no_grad():
+                q_next = self.qnetwork_target(next_state).max().item()
+                target = predicted.clone()
+                target[action] = reward + (gamma * q_next * (1 - done))
+            loss = F.mse_loss(predicted, target)
+            loss.backward()
+            self.optimizer.step()
 
         # ------------------- update target network ------------------- #
         self.soft_update(self.qnetwork_local, self.qnetwork_target, TAU)                     
