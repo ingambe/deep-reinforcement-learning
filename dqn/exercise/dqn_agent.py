@@ -5,6 +5,7 @@ from collections import namedtuple, deque
 from model import QNetwork
 
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 
@@ -34,9 +35,13 @@ class Agent():
         self.seed = random.seed(seed)
 
         # Q-Network
-        self.qnetwork_local = QNetwork(state_size, action_size, seed).to(device)
-        self.qnetwork_target = QNetwork(state_size, action_size, seed).to(device)
-        self.optimizer = optim.Adam(self.qnetwork_local.parameters(), lr=LR)
+        self.qnetwork_local_a = QNetwork(state_size, action_size, seed).to(device)
+        self.qnetwork_target_a = QNetwork(state_size, action_size, seed).to(device)
+        
+        self.qnetwork_local_b = QNetwork(state_size, action_size, seed).to(device)
+        self.qnetwork_target_b = QNetwork(state_size, action_size, seed).to(device)
+        
+        self.loss_fn = nn.SmoothL1Loss()
 
         # Replay memory
         self.memory = ReplayBuffer(action_size, BUFFER_SIZE, BATCH_SIZE, seed)
@@ -63,13 +68,21 @@ class Agent():
             state (array_like): current state
             eps (float): epsilon, for epsilon-greedy action selection
         """
-        if random.random() < eps:
+        if random.random() <= eps:
             return random.choice(np.arange(self.action_size))
+        
         state = torch.from_numpy(state).float().unsqueeze(0).to(device)
-        self.qnetwork_local.eval()
-        with torch.no_grad():
-            action_values = self.qnetwork_local(state)
-        self.qnetwork_local.train()
+        use_a = random.random() > 0.5
+        if use_a:
+            self.qnetwork_local_a.eval()
+            with torch.no_grad():
+                action_values = self.qnetwork_local_a(state)
+            self.qnetwork_local_a.train()
+        else:
+            self.qnetwork_local_b.eval()
+            with torch.no_grad():
+                action_values = self.qnetwork_local_b(state)
+            self.qnetwork_local_b.train()
 
         return np.argmax(action_values.cpu().data.numpy())
 
@@ -83,20 +96,40 @@ class Agent():
         """
         states, actions, rewards, next_states, dones = experiences
         
-        for i in range(len(experiences)):
-            self.optimizer.zero_grad()
-            state, action, reward, next_state, done = states[i], actions[i], rewards[i], next_states[i], dones[i]
-            predicted = self.qnetwork_local(state)
-            with torch.no_grad():
-                q_next = self.qnetwork_target(next_state).max().item()
-                target = predicted.clone()
-                target[action] = reward + (gamma * q_next * (1 - done))
-            loss = F.mse_loss(predicted, target)
-            loss.backward()
-            self.optimizer.step()
+        use_a = random.random() > 0.5
+        
+        if use_a:
+            optimizer = optim.Adam(self.qnetwork_local_a.parameters(), lr=LR)
+        else:
+            optimizer = optim.Adam(self.qnetwork_local_b.parameters(), lr=LR)
+        
+        optimizer.zero_grad()
+        
+        if use_a:
+            # Get max predicted Q values (for next states) from target model
+            Q_targets_next = self.qnetwork_target_b(next_states).detach().max(1)[0].unsqueeze(1)
+        else:
+            Q_targets_next = self.qnetwork_target_a(next_states).detach().max(1)[0].unsqueeze(1)
+        # Compute Q targets for current states 
+        Q_targets = rewards + (gamma * Q_targets_next * (1 - dones))
+
+        # Get expected Q values from local model
+        if use_a:
+            Q_expected = self.qnetwork_local_a(states).gather(1, actions)
+        else:
+            Q_expected = self.qnetwork_local_b(states).gather(1, actions)
+        # Compute loss
+        loss = self.loss_fn(Q_expected, Q_targets)
+        # Minimize the loss
+        loss.backward()
+        optimizer.step()
 
         # ------------------- update target network ------------------- #
-        self.soft_update(self.qnetwork_local, self.qnetwork_target, TAU)                     
+        if use_a:
+            self.soft_update(self.qnetwork_local_a, self.qnetwork_target_a, TAU) 
+        else:
+            self.soft_update(self.qnetwork_local_b, self.qnetwork_target_b, TAU) 
+            
 
     def soft_update(self, local_model, target_model, tau):
         """Soft update model parameters.
